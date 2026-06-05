@@ -1,66 +1,41 @@
-import os
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
-from config import settings
 
-def save_lead(lead_data: dict) -> bool:
+# Initialize the Google Sheets Connection
+# It automatically picks up the credentials from your Streamlit Secrets
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+def save_lead_to_sheets(email, score, category, age, gender, work_hours, meetings_per_day, sleep_hours, stress_level):
     """
-    Saves user metrics and scoring information.
-    Currently appends to a local CSV file. In a corporate environment,
-    this can be replaced with a database transaction or a BigQuery insert.
+    Appends a new lead row directly into the connected Google Sheet
+    using your exact metric headers.
     """
     try:
-        csv_path = settings.LEAD_CSV_PATH
-        
-        # Ensure parent directory exists
-        parent_dir = os.path.dirname(csv_path)
-        if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
-            
-        # Add timestamp if not present
-        if "timestamp" not in lead_data:
-            lead_data["timestamp"] = datetime.now().isoformat()
-            
-        df_new = pd.DataFrame([lead_data])
-        
-        if not os.path.exists(csv_path):
-            df_new.to_csv(csv_path, index=False)
-        else:
-            df_new.to_csv(csv_path, mode='a', header=False, index=False)
-        return True
-    except Exception as e:
-        # Logging error in enterprise environment
-        print(f"Error saving lead: {e}")
-        return False
-
-def get_leads_snapshot(n: int = 5) -> pd.DataFrame:
-    """
-    Returns the latest n leads registered in the system.
-    """
-    csv_path = settings.LEAD_CSV_PATH
-    if not os.path.exists(csv_path):
-        return pd.DataFrame()
-    try:
-        df = pd.read_csv(csv_path)
-        return df.tail(n)
+        # 1. Fetch current data from the Google Sheet (ttl=0 ensures fresh data without caching)
+        existing_data = conn.read(ttl=0)
     except Exception:
-        return pd.DataFrame()
+        # Fallback if the Google Sheet is entirely empty/new
+        existing_data = pd.DataFrame()
 
-def calculate_score_percentile(score: int) -> int:
-    """
-    Calculates the percentile ranking relative to the corporate benchmark.
-    """
-    avg = settings.BENCHMARK_AVG_SCORE
-    std = settings.BENCHMARK_STD_DEV
-    
-    try:
-        import scipy.stats as st_stats
-        percentile = int(round(st_stats.norm.cdf(score, loc=avg, scale=std) * 100))
-    except ImportError:
-        # Robust fallback using normal-like scaling if scipy is missing
-        if score > avg:
-            percentile = min(99, 50 + int((score - avg) * 1.1))
-        else:
-            percentile = max(1, 50 - int((avg - score) * 1.1))
-            
-    return min(99, max(1, percentile))
+    # 2. Build the new lead row structured with your exact data parameters
+    new_lead = pd.DataFrame([{
+        "email": email,
+        "score": score,
+        "category": category,
+        "age": age,
+        "gender": gender,
+        "work_hours": work_hours,
+        "meetings_per_day": meetings_per_day,
+        "sleep_hours": sleep_hours,
+        "stress_level": stress_level,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }])
+
+    # 3. Append the new row to existing entries
+    updated_data = pd.concat([existing_data, new_lead], ignore_index=True)
+
+    # 4. Save and overwrite the sheet live on Google Drive
+    conn.update(data=updated_data)
+    st.success("Lead saved successfully to Google Sheets!")
