@@ -219,8 +219,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-data/leads.csv
+data
 corporte-athelete-leads-sa-key.json
 *copy.py
 *.pyc
 __pycache__
+.streamlit
+*.devcontainer

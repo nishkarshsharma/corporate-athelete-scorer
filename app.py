@@ -417,7 +417,7 @@ with tab4:
         
         with st.form("lead_form", clear_on_submit=False):
             email = st.text_input("Enter your Professional Email Address", placeholder="exec@company.com")
-            submit_btn = st.form_submit_button("Lock in my score & benchmarking", type="primary")
+            submit_btn = st.form_submit_button("Lock in my score & benchmark it", type="primary")
             consent = st.checkbox(
                 "I agree to the Privacy Policy and allow Corporate Athlete Scorer to safely process "
                 "and anonymize my metrics for corporate benchmarking purposes."
@@ -432,7 +432,7 @@ with tab4:
                 else:
                     st.success("Compliance verified! Processing data...")
                     lead_data = {
-                        "email": email,
+                        "email": lead_manager._hash_email(email),
                         "score": score,
                         "category": category,
                         "age": age,
@@ -445,10 +445,14 @@ with tab4:
                     success = lead_manager.save_lead(lead_data)
                     if success:
                         st.success(f"🎉 Your score of **{score}** has been benchmarked! We've saved your result successfully.")
-                        df_leads = lead_manager.get_leads_snapshot(5)
-                        if not df_leads.empty:
-                            st.markdown("#### 📁 Lead Storage Snapshot (debug/demo)")
-                            st.info("Decoupled Architecture Notice: Raw emails are isolated on a separate database. Sensitive health attributes are safely structured separately via matching one-way SHA-256 hashes.")
-                            st.dataframe(df_leads, use_container_width=True)
+                        # Uncomment the below section when testing:
+                        # df_leads = lead_manager.get_leads_snapshot(5)
+                        # if not df_leads.empty:
+                        #     st.markdown("#### 📁 Lead Storage Snapshot (debug/demo)")
+                        #     st.info("Decoupled Architecture Notice: Raw emails are isolated on a separate database. Sensitive health attributes are safely structured separately via matching one-way SHA-256 hashes.")
+                        #     st.dataframe(df_leads, use_container_width=True)
+                        # A premium, non-intrusive way to show data collection is active
+                        total_participants = len(lead_manager.get_leads_snapshot(1000)) # adjust depending on your helper methods
+                        st.metric(label="Global Athletes Benchmarked", value=f"{total_participants} professionals")
                     else:
                         st.error("❌ Cloud Write Failure: Failed to execute write stream onto database. Please check your streamlit secrets configuration.")
