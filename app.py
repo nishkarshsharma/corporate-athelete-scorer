@@ -432,7 +432,7 @@ with tab4:
                 else:
                     st.success("Compliance verified! Processing data...")
                     lead_data = {
-                        "email": lead_manager._hash_email(email),
+                        "email": email,
                         "score": score,
                         "category": category,
                         "age": age,
