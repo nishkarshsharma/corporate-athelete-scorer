@@ -6,8 +6,17 @@ from datetime import datetime
 import hashlib
 from config import settings
 
-# Initialize the Google Sheets Connection
-conn = st.connection("gsheets", type=GSheetsConnection)
+try:
+    IS_LOCAL = "connections" not in st.secrets
+except st.errors.StreamlitSecretNotFoundError:
+    IS_LOCAL = True  # Safely default to True if no secrets file exists locally
+
+if not IS_LOCAL:
+    from streamlit_gsheets import GSheetsConnection
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+    except Exception:
+        IS_LOCAL = True  # Fallback gracefully if connection config fails
 
 def _hash_email(email: str) -> str:
     """
@@ -85,7 +94,7 @@ def get_leads_snapshot(n: int = 5) -> pd.DataFrame:
     Returns the latest n entries from the marketing email track.
     """
     try:
-        df = conn.read(worksheet="leads_marketing", ttl=0)
+        df = conn.read(worksheet="leads_metrics", ttl=0)
         if df.empty:
             return pd.DataFrame()
         return df.tail(n)
