@@ -1,3 +1,5 @@
+from altair.utils import deprecation
+from asyncio import coroutines
 import streamlit as st
 import os
 from dotenv import load_dotenv
@@ -416,11 +418,19 @@ with tab4:
         with st.form("lead_form", clear_on_submit=False):
             email = st.text_input("Enter your Professional Email Address", placeholder="exec@company.com")
             submit_btn = st.form_submit_button("Lock in my score & benchmarking", type="primary")
-            
-            if submit_btn:
-                if not email or "@" not in email or "." not in email:
+            consent = st.checkbox(
+                "I agree to the Privacy Policy and allow Corporate Athlete Scorer to safely process "
+                "and anonymize my metrics for corporate benchmarking purposes."
+            )
+            if submit_btn :
+                success = None
+                df_leads = None
+                if not consent:
+                    st.error("You must agree to the data processing terms to calculate your benchmark.")
+                elif not email or "@" not in email or "." not in email:
                     st.error("❌ Please enter a valid email address.")
                 else:
+                    st.success("Compliance verified! Processing data...")
                     lead_data = {
                         "email": email,
                         "score": score,
@@ -431,15 +441,14 @@ with tab4:
                         "meetings_per_day": meetings_per_day,
                         "sleep_hours": sleep_hours,
                         "stress_level": stress_level
-                    }
-                    
+                    }   
                     success = lead_manager.save_lead(lead_data)
                     if success:
                         st.success(f"🎉 Your score of **{score}** has been benchmarked! We've saved your result successfully.")
-                        
                         df_leads = lead_manager.get_leads_snapshot(5)
                         if not df_leads.empty:
                             st.markdown("#### 📁 Lead Storage Snapshot (debug/demo)")
+                            st.info("Decoupled Architecture Notice: Raw emails are isolated on a separate database. Sensitive health attributes are safely structured separately via matching one-way SHA-256 hashes.")
                             st.dataframe(df_leads, use_container_width=True)
                     else:
-                        st.error("❌ Failed to save benchmarking data. Please check logs.")
+                        st.error("❌ Cloud Write Failure: Failed to execute write stream onto database. Please check your streamlit secrets configuration.")

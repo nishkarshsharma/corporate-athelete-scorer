@@ -221,3 +221,6 @@ __marimo__/
 
 data/leads.csv
 corporte-athelete-leads-sa-key.json
+*copy.py
+*.pyc
+__pycache__
