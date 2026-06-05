@@ -3,52 +3,89 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
+import hashlib
 from config import settings
 
-# Initialize the Google Sheets Connection natively via Streamlit
+# Initialize the Google Sheets Connection
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+def _hash_email(email: str) -> str:
+    """
+    Cleans and hashes an email address using SHA-256 to ensure data anonymity.
+    """
+    if not email:
+        return ""
+    return hashlib.sha256(email.strip().lower().encode()).hexdigest()
 
 def save_lead(lead_data: dict) -> bool:
     """
-    Saves user metrics and scoring information by appending data
-    directly into your connected live Google Sheet.
+    Splits data into decoupled tracks: anonymized user metrics in tab 1,
+    and raw email details in tab 2 for standalone marketing functions.
     """
     try:
-        # 1. Ensure timestamp exists in your payload
-        if "timestamp" not in lead_data:
-            lead_data["timestamp"] = datetime.now().isoformat()
-            
-        # Convert single dictionary lead info to a DataFrame
-        df_new = pd.DataFrame([lead_data])
+        timestamp = datetime.now().isoformat()
+        raw_email = lead_data.get("email", "").strip()
         
-        try:
-            # 2. Read current contents from the spreadsheet (no caching to stay live)
-            existing_data = conn.read(ttl=0)
-        except Exception:
-            # Fallback if the Google Sheet has never been initialized or has no header
-            existing_data = pd.DataFrame()
+        if not raw_email:
+            print("Error saving lead: Email is required.")
+            return False
 
-        # 3. Append the new lead entry dynamically
-        if existing_data.empty:
-            updated_data = df_new
+        # --- PREPARE DATASET 1: ANONYMOUS METRICS ---
+        metrics_payload = lead_data.copy()
+        metrics_payload["email_hash"] = _hash_email(raw_email)
+        metrics_payload["timestamp"] = timestamp
+        # Strip out personal identifier
+        if "email" in metrics_payload:
+            del metrics_payload["email"]
+            
+        df_metrics_new = pd.DataFrame([metrics_payload])
+
+        # --- PREPARE DATASET 2: ISOLATED MARKETING LIST ---
+        marketing_payload = {
+            "email": raw_email,
+            "timestamp": timestamp
+        }
+        df_marketing_new = pd.DataFrame([marketing_payload])
+
+        # --- WORK WITH TAB 1: leads_metrics ---
+        try:
+            # worksheet parameter targets the specific tab
+            existing_metrics = conn.read(worksheet="leads_metrics", ttl=0)
+        except Exception:
+            existing_metrics = pd.DataFrame()
+
+        if existing_metrics.empty:
+            updated_metrics = df_metrics_new
         else:
-            updated_data = pd.concat([existing_data, df_new], ignore_index=True)
+            updated_metrics = pd.concat([existing_metrics, df_metrics_new], ignore_index=True)
         
-        # 4. Upload and commit back up to Google Drive
-        conn.update(data=updated_data)
+        conn.update(worksheet="leads_metrics", data=updated_metrics)
+
+        # --- WORK WITH TAB 2: leads_marketing ---
+        try:
+            existing_marketing = conn.read(worksheet="leads_marketing", ttl=0)
+        except Exception:
+            existing_marketing = pd.DataFrame()
+
+        if existing_marketing.empty:
+            updated_marketing = df_marketing_new
+        else:
+            updated_marketing = pd.concat([existing_marketing, df_marketing_new], ignore_index=True)
+            
+        conn.update(worksheet="leads_marketing", data=updated_marketing)
+
         return True
         
     except Exception as e:
-        print(f"Error saving lead to Google Sheets: {e}")
+        print(f"Error executing tokenized save routine: {e}")
         return False
 
 def get_leads_snapshot(n: int = 5) -> pd.DataFrame:
     """
-    Returns the latest n leads registered directly from your Google Sheet.
+    Returns the latest n entries from the marketing email track.
     """
     try:
-        # Read live data from the sheet
-        df = conn.read(ttl=0)
+        df = conn.read(worksheet="leads_marketing", ttl=0)
         if df.empty:
             return pd.DataFrame()
         return df.tail(n)
@@ -59,7 +96,6 @@ def get_leads_snapshot(n: int = 5) -> pd.DataFrame:
 def calculate_score_percentile(score: int) -> int:
     """
     Calculates the percentile ranking relative to the corporate benchmark.
-    Kept identical to original to ensure seamless app calculations.
     """
     avg = settings.BENCHMARK_AVG_SCORE
     st_dev = settings.BENCHMARK_STD_DEV
@@ -68,7 +104,6 @@ def calculate_score_percentile(score: int) -> int:
         import scipy.stats as st_stats
         percentile = int(round(st_stats.norm.cdf(score, loc=avg, scale=st_dev) * 100))
     except ImportError:
-        # Robust fallback using normal-like scaling if scipy is missing
         if score > avg:
             percentile = min(99, 50 + int((score - avg) * 1.1))
         else:
