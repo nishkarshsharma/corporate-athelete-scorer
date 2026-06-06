@@ -56,7 +56,7 @@ def save_lead(lead_data: dict) -> bool:
         }
         df_marketing_new = pd.DataFrame([marketing_payload])
 
-        # --- WORK WITH TAB 1: leads_metrics ---
+        # --- WORK WITH TAB 1: leads_metrics ---h
         try:
             # worksheet parameter targets the specific tab
             existing_metrics = conn.read(worksheet="leads_metrics", ttl=0)
