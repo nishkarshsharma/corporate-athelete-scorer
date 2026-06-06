@@ -5,3 +5,4 @@ python-dotenv>=1.0.0
 pandas>=2.0.0
 st-gsheets-connection
 scipy
+huggingface_hub>=0.20.0

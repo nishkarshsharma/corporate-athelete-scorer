@@ -221,6 +221,7 @@ __marimo__/
 
 data
 corporte-athelete-leads-sa-key.json
+hf-token-corporate-athlete-scorer.json
 *copy.py
 *.pyc
 __pycache__

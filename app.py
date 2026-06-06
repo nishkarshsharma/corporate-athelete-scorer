@@ -11,7 +11,6 @@ from src import score_engine
 from src import coach_engine
 from src.utils import lead_manager
 
-# Load environment variables (e.g. GEMINI_API_KEY)
 load_dotenv()
 
 # Page Config
@@ -64,12 +63,12 @@ with st.sidebar:
         training_days = st.slider("Weekly Training Days", 0, 7, 2, step=1)
         stress_level = st.slider("Cognitive Stress (1-10)", 1, 10, 7)
 
-    with st.expander("🔑 Gemini API Settings", expanded=False):
+    with st.expander("🔑 Hugging Face API Settings", expanded=False):
         api_key = st.text_input(
-            "Gemini API Key", 
+            "Hugging Face API Key", 
             type="password", 
-            value=os.environ.get(settings.GEMINI_API_KEY_ENV_VAR, ""), 
-            help="Provide your Google Gemini API Key to enable custom, generative coaching advice. Falls back to local Rules Engine otherwise."
+            value=os.environ.get(settings.HF_TOKEN_ENV_VAR, ""), 
+            help="Provide your Hugging Face API Key to enable custom, generative coaching advice. Falls back to local Rules Engine otherwise."
         )
 
 # ----------------- DATA PREPARATION -----------------
@@ -119,7 +118,7 @@ offset = circumference - (score / 100.0) * circumference
 # ----------------- TABS SETUP -----------------
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 Score Analysis", 
-    "🎙️ Gemini Performance Coach", 
+    "🎙️ AI Performance Coach", 
     "⚡ Promotion Simulator", 
     "💾 Save & Benchmark"
 ])
@@ -244,20 +243,20 @@ with tab1:
             
             st.markdown(limiters_combined_html, unsafe_allow_html=True)
 
-# ----------------- TAB 2: GEMINI PERFORMANCE COACH -----------------
+# ----------------- TAB 2: AI PERFORMANCE COACH -----------------
 with tab2:
     with st.container(border=True):
         st.markdown("### 🎙️ Personalized AI Coaching Report")
         st.markdown(
-            "Generate a bespoke coaching assessment powered by **Gemini 2.5 Flash** "
+            "Generate a bespoke coaching assessment powered by **AI** "
             "designed to optimize your physiology around your busy corporate lifestyle."
         )
         
-        has_api_key = bool(api_key or os.environ.get(settings.GEMINI_API_KEY_ENV_VAR))
+        has_api_key = bool(api_key or os.environ.get(settings.HF_TOKEN_ENV_VAR))
         if not has_api_key:
-            st.info("💡 You are viewing the rules-based fallback coaching plan. Enter a Gemini API Key in the sidebar for customized, AI-driven guidance.")
+            st.info("💡 You are viewing the rules-based fallback coaching plan. Enter a Hugging Face API Key in the sidebar for customized, AI-driven guidance.")
         else:
-            st.success("🤖 Gemini 2.5 Flash Coach is connected. Click below to analyze.")
+            st.success("🤖 AI Performance Coach is connected. Click below to analyze.")
 
         if st.button("Generate Coaching Protocol", type="primary"):
             with st.spinner("Analyzing metrics and formulating executive advice..."):
@@ -277,7 +276,7 @@ with tab2:
                 )
                 
                 source_badge = (
-                    '<span class="category-badge cat-elite" style="margin-bottom: 20px;">🤖 Gemini Flash Coach</span>'
+                    '<span class="category-badge cat-elite" style="margin-bottom: 20px;">🤖 AI Flash Coach</span>'
                     if report["is_ai"] else 
                     '<span class="category-badge cat-sedentary" style="margin-bottom: 20px;">🧭 Rule-Based Coach Fallback</span>'
                 )

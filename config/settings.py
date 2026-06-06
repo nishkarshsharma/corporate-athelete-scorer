@@ -1,9 +1,10 @@
 import os
 
-# GenAI (Gemini) Setup
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_API_KEY_ENV_VAR = "GEMINI_API_KEY"
-
+# To swap to DeepSeek text generation later, change this string to "deepseek-ai/DeepSeek-V3"
+HF_MODEL = os.environ.get("HF_MODEL", "meta-llama/Llama-3.1-8B-Instruct")  # Fully hosted on the free Serverless API tier!
+# HF_MODEL = "google/gemma-4-12B-it"  # Highly capable instruction-tuned architecture
+HF_TOKEN_ENV_VAR = "HF_TOKEN"
+    
 DEFAULT_SYSTEM_INSTRUCTION = (
     "You are a world-class fitness, sleep, and performance coach specializing in high-performing corporate professionals "
     "(engineers, executives, founders). You synthesize health data and provide realistic, low-friction habits. "
