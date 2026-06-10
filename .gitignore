@@ -217,7 +217,7 @@ marimo/_lsp/
 __marimo__/
 
 # Streamlit
-.streamlit/secrets.toml
+.streamlit/.secret.toml
 
 data
 corporte-athelete-leads-sa-key.json
@@ -225,5 +225,5 @@ hf-token-corporate-athlete-scorer.json
 *copy.py
 *.pyc
 __pycache__
-.streamlit
 *.devcontainer
+TO-DO.txt
