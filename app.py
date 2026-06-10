@@ -33,7 +33,7 @@ except Exception as e:
 # App Header
 st.markdown("""
 <div style='text-align: center; margin-bottom: 30px;'>
-    <h1 style='font-size: 2.8rem; font-weight: 800; margin-bottom: 5px; color: #ffffff;'>
+    <h1 class="hero-title">
         💼 <span class="gradient-text">CORPORATE ATHLETE</span> SCORER
     </h1>
     <p style='color: #94a3b8; font-size: 1.1rem; max-width: 700px; margin: 0 auto;'>
@@ -116,24 +116,23 @@ circumference = 502.65
 offset = circumference - (score / 100.0) * circumference
 
 # ----------------- TABS SETUP -----------------
+# Session state
+if "coach_report" not in st.session_state:
+    st.session_state.coach_report = None
+
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📈 Score Analysis", 
-    "🎙️ AI Performance Coach", 
-    "⚡ Promotion Simulator", 
-    "💾 Save & Benchmark"
+    "📈 Analysis", 
+    "🎙️ AI Coach", 
+    "⚡ Simulator", 
+    "💾 Benchmark"
 ])
 
 
-# ----------------- TAB 1: SCORE & ANALYSIS -----------------
 # ----------------- TAB 1: SCORE & ANALYSIS -----------------
 with tab1:
     col_left, col_right = st.columns([1, 2])
     
     with col_left:
-        # 1. Open the card container wrapper cleanly
-        st.markdown('<div class="premium-card">', unsafe_allow_html=True)
-        
-        # 2. Render your dynamic content inside
         st.markdown(f"""
             <h3 style="margin: 0 0 10px 0; font-weight: 700; font-size: 1.25rem; color: var(--text-color);">Score Overview</h3> 
             
@@ -171,11 +170,7 @@ with tab1:
             </div>
         """, unsafe_allow_html=True)
         
-        # 3. Close the card container wrapper
-        st.markdown('</div>', unsafe_allow_html=True)
-
         # PROJECTED FITNESS POTENTIAL CARD
-        st.markdown('<div class="premium-card">', unsafe_allow_html=True)
         st.markdown(f"""
             <h3 style="margin-top: 0; margin-bottom: 15px; font-weight: 700; font-size: 1.15rem; color: var(--text-color);">🎯 Projected Fitness Potential</h3>
             <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -193,11 +188,9 @@ with tab1:
                 </div>
             </div>
         """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_right:
         # CATEGORY BREAKDOWN CARD
-        st.markdown('<div class="premium-card" style="padding: 15px; border-radius: 8px; background: rgba(128,128,128,0.05); margin-bottom: 20px;">', unsafe_allow_html=True)
         st.markdown(f"""
             <h4 style="margin-top: 0; font-weight: 700; color: var(--text-color);">🧭 Category Breakdown</h4>
             <div style="display: flex; justify-content: space-between; margin-top: 15px; flex-wrap: wrap; gap: 10px;">
@@ -223,7 +216,7 @@ with tab1:
                 </div>
             </div>
         """, unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # st.markdown('</div>', unsafe_allow_html=True)
 
         # KEY LIMITERS CARD
         if not limiters:
@@ -245,7 +238,7 @@ with tab1:
 
 # ----------------- TAB 2: AI PERFORMANCE COACH -----------------
 with tab2:
-    with st.container(border=True):
+    with st.container():
         st.markdown("### 🎙️ Personalized AI Coaching Report")
         st.markdown(
             "Generate a bespoke coaching assessment powered by **AI** "
@@ -260,7 +253,7 @@ with tab2:
 
         if st.button("Generate Coaching Protocol", type="primary"):
             with st.spinner("Analyzing metrics and formulating executive advice..."):
-                report = coach_engine.get_coaching_report(
+                st.session_state.coach_report = coach_engine.get_coaching_report(
                     age=age,
                     weight=weight,
                     height=height,
@@ -275,17 +268,26 @@ with tab2:
                     api_key=api_key
                 )
                 
+                if st.session_state.coach_report:
+                    report = st.session_state.coach_report
+
                 source_badge = (
                     '<span class="category-badge cat-elite" style="margin-bottom: 20px;">🤖 AI Flash Coach</span>'
                     if report["is_ai"] else 
                     '<span class="category-badge cat-sedentary" style="margin-bottom: 20px;">🧭 Rule-Based Coach Fallback</span>'
                 )
                 st.markdown(source_badge, unsafe_allow_html=True)
-                st.markdown(report["content"])
+                st.markdown(f"""
+                    <div class="coach-report">
+                        {report["content"]}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
 # ----------------- TAB 3: PROMOTION SIMULATOR -----------------
 with tab3:
-    with st.container(border=True):
+    with st.container():
         st.markdown("### ⚡ Career Promotion Impact Simulator")
         st.markdown(
             "How will climbing the corporate ladder affect your physical baseline? "
@@ -380,7 +382,7 @@ with tab3:
 
 # ----------------- TAB 4: SAVE & BENCHMARK -----------------
 with tab4:
-    with st.container(border=True):
+    with st.container():
         st.markdown("### 💾 Secure Your Performance Benchmarking")
         st.markdown(
             "Capture your score in our database to compare yourself with the anonymous aggregate corporate metrics. "
