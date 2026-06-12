@@ -227,3 +227,5 @@ hf-token-corporate-athlete-scorer.json
 __pycache__
 *.devcontainer
 TO-DO.txt
+
+.venv/*
