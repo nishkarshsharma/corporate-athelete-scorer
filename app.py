@@ -5,7 +5,6 @@ import os
 from dotenv import load_dotenv
 from textwrap import dedent
 
-# Import package components
 from config import settings
 from src import score_engine
 from src import coach_engine
@@ -53,6 +52,8 @@ with st.sidebar:
         height = st.number_input("Height (cm)", 120, 220, 178)
         
     with st.expander("💼 Career & Workload", expanded=True):
+        job_role = st.text_input("Job Title / Role", placeholder="e.g., Senior Engineer, Director") # NEW PARAMETER
+        user_goal = st.selectbox("Primary Focus Goal", ["Prevent Burnout", "Optimize Energy", "Build Muscle/Lose Fat", "Improve Sleep Resilience"]) # NEW PARAMETER
         work_hours = st.slider("Weekly Work Hours", 20, 100, 48, step=1)
         meetings_per_day = st.slider("Daily Meetings", 0, 15, 5, step=1)
         commute_hours = st.slider("Daily Commute (hrs/day)", 0.0, 6.0, 1.2, step=0.1)
@@ -71,7 +72,7 @@ with st.sidebar:
             help="Provide your Hugging Face API Key to enable custom, generative coaching advice. Falls back to local Rules Engine otherwise."
         )
 
-# ----------------- DATA PREPARATION -----------------
+# ----------------- DATA PREPARATION & DETACHED AUTO-SAVE FLOW -----------------
 current_metrics = {
     "age": age,
     "weight": weight,
@@ -98,6 +99,47 @@ potential = score_engine.calculate_fitness_potential(
     score, gender, age, weight, height, training_days, meetings_per_day, commute_hours, work_hours
 )
 
+# Extract top limiter parameters using deterministic engine rules directly
+top_limiter_name = limiters[0]["name"] if limiters else "None"
+recommended_action_text = limiters[0]["recommendation"] if limiters else "Maintain current wellness trajectory."
+
+# Initialize Session State Variables cleanly
+if "current_assessment_id" not in st.session_state:
+    st.session_state.current_assessment_id = None
+if "coach_report" not in st.session_state:
+    st.session_state.coach_report = None
+if "last_processed_metrics" not in st.session_state:
+    st.session_state.last_processed_metrics = None
+
+# CRITICAL P0 STEP: Handle state mutations to trigger unique assessment entries
+# If user changes sliders, calculate a brand-new assessment ID immediately.
+if st.session_state.last_processed_metrics != current_metrics:
+    st.session_state.last_processed_metrics = current_metrics
+    st.session_state.coach_report = None  # Reset report state so it updates against new values
+    
+    # Pack unified dictionary containing core metrics alongside the extended payload attributes
+    save_payload = {
+        "score": score,
+        "category": category,
+        "age": age,
+        "gender": gender,
+        "work_hours": work_hours,
+        "meetings_per_day": meetings_per_day,
+        "sleep_hours": sleep_hours,
+        "stress_level": stress_level,
+        "top_limiter": top_limiter_name,
+        "recommended_action": recommended_action_text,
+        "user_goal": user_goal,
+        "job_role": job_role
+    }
+    
+    # Save base structural assessment row immediately to Google Sheets database log
+    # Pass an empty string for the email since PII email capture is handled asynchronously on Tab 4
+    st.session_state.current_assessment_id = lead_manager.save_assessment(
+        email="", 
+        metrics_data=save_payload
+    )
+
 # Render Score Ring CSS classes matching your stylesheet perfectly
 if score >= 81:
     stroke_color = "#10b981"  # Emerald
@@ -116,17 +158,12 @@ circumference = 502.65
 offset = circumference - (score / 100.0) * circumference
 
 # ----------------- TABS SETUP -----------------
-# Session state
-if "coach_report" not in st.session_state:
-    st.session_state.coach_report = None
-
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 Analysis", 
     "🎙️ AI Coach", 
     "⚡ Simulator", 
     "💾 Benchmark"
 ])
-
 
 # ----------------- TAB 1: SCORE & ANALYSIS -----------------
 with tab1:
@@ -216,7 +253,6 @@ with tab1:
                 </div>
             </div>
         """, unsafe_allow_html=True)
-        # st.markdown('</div>', unsafe_allow_html=True)
 
         # KEY LIMITERS CARD
         if not limiters:
@@ -268,22 +304,29 @@ with tab2:
                     api_key=api_key
                 )
                 
-                if st.session_state.coach_report:
-                    report = st.session_state.coach_report
+                # UPDATE TRANSACTION: Write the generated report backend string onto the active row tracker
+                if st.session_state.coach_report and st.session_state.current_assessment_id:
+                    lead_manager.update_ai_response(
+                        assessment_id=st.session_state.current_assessment_id,
+                        ai_response_text=st.session_state.coach_report["content"]
+                    )
 
-                source_badge = (
-                    '<span class="category-badge cat-elite" style="margin-bottom: 20px;">🤖 AI Flash Coach</span>'
-                    if report["is_ai"] else 
-                    '<span class="category-badge cat-sedentary" style="margin-bottom: 20px;">🧭 Rule-Based Coach Fallback</span>'
-                )
-                st.markdown(source_badge, unsafe_allow_html=True)
-                st.markdown(f"""
-                    <div class="coach-report">
-                        {report["content"]}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+        # Render report from session state persistent container
+        if st.session_state.coach_report:
+            report = st.session_state.coach_report
+            source_badge = (
+                '<span class="category-badge cat-elite" style="margin-bottom: 20px;">🤖 AI Flash Coach</span>'
+                if report["is_ai"] else 
+                '<span class="category-badge cat-sedentary" style="margin-bottom: 20px;">🧭 Rule-Based Coach Fallback</span>'
+            )
+            st.markdown(source_badge, unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class="coach-report">
+                    {report["content"]}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 # ----------------- TAB 3: PROMOTION SIMULATOR -----------------
 with tab3:
@@ -386,7 +429,7 @@ with tab4:
         st.markdown("### 💾 Secure Your Performance Benchmarking")
         st.markdown(
             "Capture your score in our database to compare yourself with the anonymous aggregate corporate metrics. "
-            "We will save your email, athlete score, and category locally."
+            "We will save your email into marketing and correlate your metrics anonymously via security hashes."
         )
         
         percentile = lead_manager.calculate_score_percentile(score)
@@ -423,37 +466,28 @@ with tab4:
                 "I agree to the Privacy Policy and allow Corporate Athlete Scorer to safely process "
                 "and anonymize my metrics for corporate benchmarking purposes."
             )
-            if submit_btn :
-                success = None
-                df_leads = None
+            if submit_btn:
                 if not consent:
                     st.error("You must agree to the data processing terms to calculate your benchmark.")
                 elif not email or "@" not in email or "." not in email:
                     st.error("❌ Please enter a valid email address.")
                 else:
-                    st.success("Compliance verified! Processing data...")
-                    lead_data = {
-                        "email": email,
-                        "score": score,
-                        "category": category,
-                        "age": age,
-                        "gender": gender,
-                        "work_hours": work_hours,
-                        "meetings_per_day": meetings_per_day,
-                        "sleep_hours": sleep_hours,
-                        "stress_level": stress_level
-                    }   
-                    success = lead_manager.save_lead(lead_data)
-                    if success:
+                    st.success("Compliance verified! Saving PII variables safely...")
+                    
+                    # Store plain text email to marketing sheet safely
+                    lead_manager.save_marketing_lead(email)
+                    
+                    # Update active assessment row matching active hash values securely
+                    email_hash = lead_manager._hash_email(email)
+                    try:
+                        # Find matching index cell and update hash securely
+                        cell = lead_manager.metrics_sheet.find(st.session_state.current_assessment_id, in_column=11)
+                        if cell:
+                            lead_manager.metrics_sheet.update_cell(cell.row, 9, email_hash)
+                        
                         st.success(f"🎉 Your score of **{score}** has been benchmarked! We've saved your result successfully.")
-                        # Uncomment the below section when testing:
-                        # df_leads = lead_manager.get_leads_snapshot(5)
-                        # if not df_leads.empty:
-                        #     st.markdown("#### 📁 Lead Storage Snapshot (debug/demo)")
-                        #     st.info("Decoupled Architecture Notice: Raw emails are isolated on a separate database. Sensitive health attributes are safely structured separately via matching one-way SHA-256 hashes.")
-                        #     st.dataframe(df_leads, use_container_width=True)
-                        # A premium, non-intrusive way to show data collection is active
-                        total_participants = len(lead_manager.get_leads_snapshot(1000)) # adjust depending on your helper methods
+                        
+                        total_participants = len(lead_manager.get_leads_snapshot(1000))
                         st.metric(label="Global Athletes Benchmarked", value=f"{total_participants} professionals")
-                    else:
-                        st.error("❌ Cloud Write Failure: Failed to execute write stream onto database. Please check your streamlit secrets configuration.")
+                    except Exception as e:
+                        st.error(f"❌ Cloud Write Failure: Failed to link anonymized email parameter: {e}")

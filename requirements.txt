@@ -1,8 +1,0 @@
-streamlit>=1.30.0
-google-genai>=0.1.0
-pytest>=7.0.0
-python-dotenv>=1.0.0
-pandas>=2.0.0
-st-gsheets-connection
-scipy
-huggingface_hub>=0.20.0

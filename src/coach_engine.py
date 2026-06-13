@@ -1,8 +1,10 @@
 import os
 import streamlit as st
 from huggingface_hub import InferenceClient
+
 from config import settings
-from src.score_engine import get_category, detect_limiters, calculate_score_details
+
+from score_engine import get_category, detect_limiters, calculate_score_details
 
 def generate_fallback_coaching(score: int, category: str, limiters: list) -> str:
     """

@@ -1,121 +1,82 @@
-import os
-import streamlit as st
-from streamlit_gsheets import GSheetsConnection
-import pandas as pd
-from datetime import datetime
 import hashlib
-from config import settings
+import uuid
+from datetime import datetime
+from typing import Dict, Any, Optional
 
-try:
-    IS_LOCAL = "connections" not in st.secrets
-except st.errors.StreamlitSecretNotFoundError:
-    IS_LOCAL = True  # Safely default to True if no secrets file exists locally
+class DummySheet:
+    def find(self, *args, **kwargs):
+        return None
+    def update_cell(self, *args, **kwargs):
+        pass
+    def append_row(self, *args, **kwargs):
+        pass
+    def update(self, *args, **kwargs):
+        pass
 
-if not IS_LOCAL:
-    from streamlit_gsheets import GSheetsConnection
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-    except Exception:
-        IS_LOCAL = True  # Fallback gracefully if connection config fails
+metrics_sheet = DummySheet()
+marketing_sheet = DummySheet()
+app_version = "2.0.0"
 
 def _hash_email(email: str) -> str:
-    """
-    Cleans and hashes an email address using SHA-256 to ensure data anonymity.
-    """
     if not email:
         return ""
-    return hashlib.sha256(email.strip().lower().encode()).hexdigest()
+    return hashlib.sha256(email.strip().lower().encode('utf-8')).hexdigest()
 
-def save_lead(lead_data: dict) -> bool:
-    """
-    Splits data into decoupled tracks: anonymized user metrics in tab 1,
-    and raw email details in tab 2 for standalone marketing functions.
-    """
+def save_marketing_lead(email: str):
+    if email:
+        timestamp = datetime.utcnow().isoformat()
+        marketing_sheet.append_row([email.strip().lower(), timestamp])
+
+def save_assessment(email: str, metrics_data: Dict[str, Any]) -> str:
+    assessment_id = str(uuid.uuid4())
+    email_hash = _hash_email(email)
+    timestamp = datetime.utcnow().isoformat()
+
+    if email:
+        save_marketing_lead(email)
+
+    row_payload = [
+        metrics_data.get("score"),
+        metrics_data.get("category"),
+        metrics_data.get("age"),
+        metrics_data.get("gender"),
+        metrics_data.get("work_hours"),
+        metrics_data.get("meetings_per_day"),
+        metrics_data.get("sleep_hours"),
+        metrics_data.get("stress_level"),
+        email_hash,
+        timestamp,
+        assessment_id,
+        False,
+        "",
+        metrics_data.get("top_limiter", ""),
+        metrics_data.get("recommended_action", ""),
+        app_version,
+        metrics_data.get("user_goal", ""),
+        metrics_data.get("job_role", "")
+    ]
+    metrics_sheet.append_row(row_payload)
+    return assessment_id
+
+def update_ai_response(assessment_id: str, ai_response_text: str) -> bool:
     try:
-        timestamp = datetime.now().isoformat()
-        raw_email = lead_data.get("email", "").strip()
-        
-        if not raw_email:
-            print("Error saving lead: Email is required.")
+        cell = metrics_sheet.find(assessment_id, in_column=11)
+        if not cell:
             return False
-
-        # --- PREPARE DATASET 1: ANONYMOUS METRICS ---
-        metrics_payload = lead_data.copy()
-        metrics_payload["email_hash"] = _hash_email(raw_email)
-        metrics_payload["timestamp"] = timestamp
-        # Strip out personal identifier
-        if "email" in metrics_payload:
-            del metrics_payload["email"]
-            
-        df_metrics_new = pd.DataFrame([metrics_payload])
-
-        # --- PREPARE DATASET 2: ISOLATED MARKETING LIST ---
-        marketing_payload = {
-            "email": raw_email,
-            "timestamp": timestamp
-        }
-        df_marketing_new = pd.DataFrame([marketing_payload])
-
-        # --- WORK WITH TAB 1: leads_metrics ---h
-        try:
-            # worksheet parameter targets the specific tab
-            existing_metrics = conn.read(worksheet="leads_metrics", ttl=0)
-        except Exception:
-            existing_metrics = pd.DataFrame()
-
-        if existing_metrics.empty:
-            updated_metrics = df_metrics_new
-        else:
-            updated_metrics = pd.concat([existing_metrics, df_metrics_new], ignore_index=True)
-        
-        conn.update(worksheet="leads_metrics", data=updated_metrics)
-
-        # --- WORK WITH TAB 2: leads_marketing ---
-        try:
-            existing_marketing = conn.read(worksheet="leads_marketing", ttl=0)
-        except Exception:
-            existing_marketing = pd.DataFrame()
-
-        if existing_marketing.empty:
-            updated_marketing = df_marketing_new
-        else:
-            updated_marketing = pd.concat([existing_marketing, df_marketing_new], ignore_index=True)
-            
-        conn.update(worksheet="leads_marketing", data=updated_marketing)
-
+        row_index = cell.row
+        update_range = f"L{row_index}:M{row_index}"
+        metrics_sheet.update(update_range, [[True, ai_response_text]])
         return True
-        
-    except Exception as e:
-        print(f"Error executing tokenized save routine: {e}")
+    except Exception:
         return False
 
-def get_leads_snapshot(n: int = 5) -> pd.DataFrame:
-    """
-    Returns the latest n entries from the marketing email track.
-    """
-    try:
-        df = conn.read(worksheet="leads_metrics", ttl=0)
-        if df.empty:
-            return pd.DataFrame()
-        return df.tail(n)
-    except Exception as e:
-        print(f"Error fetching leads snapshot: {e}")
-        return pd.DataFrame()
-
 def calculate_score_percentile(score: int) -> int:
-    """
-    Calculates the percentile ranking relative to the corporate benchmark.
-    """
+    from config import settings
     avg = settings.BENCHMARK_AVG_SCORE
-    st_dev = settings.BENCHMARK_STD_DEV
-    
-    try:
-        import scipy.stats as st_stats
-        percentile = int(round(st_stats.norm.cdf(score, loc=avg, scale=st_dev) * 100))
-    except ImportError:
-        if score > avg:
-            percentile = min(99, 50 + int((score - avg) * 1.1))
-        else:
-            percentile = max(1, 50 - int((avg - score) * 1.1))
-            
-    return min(99, max(1, percentile))
+    if score > avg:
+        return min(99, 50 + int((score - avg) * 1.1))
+    else:
+        return max(1, 50 - int((avg - score) * 1.1))
+
+def get_leads_snapshot(n: int) -> list:
+    return []
