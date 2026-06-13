@@ -68,7 +68,7 @@ def _hash_email(email: str) -> str:
 
 #deduplication fix
 
-def save_marketing_lead(email: str, source: str = "benchmark") -> bool:
+def save_marketing_lead(email: str) -> bool:
     """
     Saves a marketing lead to the leads_marketing sheet.
     Includes deduplication to prevent duplicate email entries.
@@ -88,7 +88,7 @@ def save_marketing_lead(email: str, source: str = "benchmark") -> bool:
         # If not found, append the new row
         from datetime import datetime
         timestamp = datetime.utcnow().isoformat()
-        marketing_sheet.append_row([email, source, timestamp])
+        marketing_sheet.append_row([email, timestamp])
         return True
         
     except Exception as e:

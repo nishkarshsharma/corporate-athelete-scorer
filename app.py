@@ -306,8 +306,7 @@ with tab2:
                     
                     # Deduplication handled internally in save_marketing_lead
                     lead_manager.save_marketing_lead(
-                        email=st.session_state.coach_email, 
-                        source="ai_coach"
+                        email=st.session_state.coach_email
                     )
 
                     st.session_state.coach_report = coach_engine.get_coaching_report(
@@ -499,7 +498,9 @@ with tab4:
                     st.success("Compliance verified! Saving PII variables safely...")
                     
                     # Store plain text email to marketing sheet safely
-                    lead_manager.save_marketing_lead(email)
+                    lead_manager.save_marketing_lead(
+                        email=st.session_state.coach_email
+                    )
                     
                     # Update active assessment row matching active hash values securely
                     email_hash = lead_manager._hash_email(email)
