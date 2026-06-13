@@ -21,6 +21,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Prioritize Streamlit secrets (for prod), fallback to os.getenv (for local .env)
+api_key = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN"))
+
 # Load External Styling from stylesheet
 css_path = os.path.join("src", "styles", "main.css")
 try:
@@ -65,14 +68,6 @@ with st.sidebar:
         training_days = st.slider("Weekly Training Days", 0, 7, 2, step=1)
         stress_level = st.slider("Cognitive Stress (1-10)", 1, 10, 7)
 
-    with st.expander("🔑 Hugging Face API Settings", expanded=False):
-        api_key = st.text_input(
-            "Hugging Face API Key", 
-            type="password", 
-            value=os.environ.get(settings.HF_TOKEN_ENV_VAR, ""), 
-            help="Provide your Hugging Face API Key to enable custom, generative coaching advice. Falls back to local Rules Engine otherwise."
-        )
-
 # ----------------- DATA PREPARATION & DETACHED AUTO-SAVE FLOW -----------------
 current_metrics = {
     "age": age,
@@ -112,34 +107,6 @@ if "coach_report" not in st.session_state:
 if "last_processed_metrics" not in st.session_state:
     st.session_state.last_processed_metrics = None
 
-# CRITICAL P0 STEP: Handle state mutations to trigger unique assessment entries
-# If user changes sliders, calculate a brand-new assessment ID immediately.
-if st.session_state.last_processed_metrics != current_metrics:
-    st.session_state.last_processed_metrics = current_metrics
-    st.session_state.coach_report = None  # Reset report state so it updates against new values
-    
-    # Pack unified dictionary containing core metrics alongside the extended payload attributes
-    save_payload = {
-        "score": score,
-        "category": category,
-        "age": age,
-        "gender": gender,
-        "work_hours": work_hours,
-        "meetings_per_day": meetings_per_day,
-        "sleep_hours": sleep_hours,
-        "stress_level": stress_level,
-        "top_limiter": top_limiter_name,
-        "recommended_action": recommended_action_text,
-        "user_goal": user_goal,
-        "job_role": job_role
-    }
-    
-    # Save base structural assessment row immediately to Google Sheets database log
-    # Pass an empty string for the email since PII email capture is handled asynchronously on Tab 4
-    st.session_state.current_assessment_id = lead_manager.save_assessment(
-        email="", 
-        metrics_data=save_payload
-    )
 
 # Render Score Ring CSS classes matching your stylesheet perfectly
 if score >= 81:
@@ -159,11 +126,10 @@ circumference = 502.65
 offset = circumference - (score / 100.0) * circumference
 
 # ----------------- TABS SETUP -----------------
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "📈 Analysis", 
     "🎙️ AI Coach", 
     "⚡ Simulator", 
-    "💾 Benchmark"
 ])
 
 # ----------------- TAB 1: SCORE & ANALYSIS -----------------
@@ -273,44 +239,136 @@ with tab1:
             
             st.markdown(limiters_combined_html, unsafe_allow_html=True)
 
-# ----------------- TAB 2: AI PERFORMANCE COACH -----------------
+# ----------------- TAB 2: MY ASSESSMENT & AI COACH -----------------
 with tab2:
-    with st.container():
-        st.markdown("### 🎙️ Personalized AI Coaching Report")
-        st.markdown(
-            "Generate a bespoke coaching assessment powered by **AI** "
-            "designed to optimize your physiology around your busy corporate lifestyle."
-        )
-        
-        has_api_key = bool(api_key or os.environ.get(settings.HF_TOKEN_ENV_VAR))
-        if not has_api_key:
-            st.info("💡 You are viewing the rules-based fallback coaching plan. Enter a Hugging Face API Key in the sidebar for customized, AI-driven guidance.")
-        else:
-            st.success("🤖 AI Performance Coach is connected. Click below to analyze.")
+    st.markdown("### 📊 Your Corporate Benchmark & AI Protocol")
+    
+    # Initialize the gate state if it doesn't exist
+    if "coach_email_verified" not in st.session_state:
+        st.session_state.coach_email_verified = False
 
-        if st.button("Generate Coaching Protocol", type="primary"):
-            with st.spinner("Analyzing metrics and formulating executive advice..."):
-                st.session_state.coach_report = coach_engine.get_coaching_report(
-                    age=age,
-                    weight=weight,
-                    height=height,
-                    work_hours=work_hours,
-                    meetings_per_day=meetings_per_day,
-                    commute_hours=commute_hours,
-                    sleep_hours=sleep_hours,
-                    travel_days=travel_days,
-                    training_days=training_days,
-                    stress_level=stress_level,
-                    gender=gender,
-                    api_key=api_key
-                )
-                
-                # UPDATE TRANSACTION: Write the generated report backend string onto the active row tracker
-                if st.session_state.coach_report and st.session_state.current_assessment_id:
-                    lead_manager.update_ai_response(
-                        assessment_id=st.session_state.current_assessment_id,
-                        ai_response_text=st.session_state.coach_report["content"]
+    # -----------------------------------------------------------
+    # STATE 1: THE LOCK GATE (Requires Email & Consent)
+    # -----------------------------------------------------------
+    if not st.session_state.coach_email_verified:
+        st.info("Unlock your corporate percentile benchmarking and personalized AI coaching report by entering your professional email below.")
+        
+        # Always visible score teaser
+        st.markdown(f"#### Your score is **{score}** · Top limiter: **{top_limiter_name}**")
+
+        with st.form("unlock_form", clear_on_submit=False):
+            email = st.text_input("Enter your Professional Email Address", placeholder="exec@company.com")
+            consent = st.checkbox(
+                "I agree to the Privacy Policy and allow Corporate Athlete Scorer to safely process "
+                "and anonymize my metrics for corporate benchmarking purposes."
+            )
+            submit_btn = st.form_submit_button("Lock in my score & Unlock AI Coach", type="primary")
+
+            if submit_btn:
+                if not consent:
+                    st.error("You must agree to the data processing terms to calculate your benchmark.")
+                elif not email or "@" not in email or "." not in email:
+                    st.error("❌ Please enter a valid email address.")
+                else:
+                    # 1. Pack unified dictionary 
+                    save_payload = {
+                        "score": score,
+                        "category": category,
+                        "age": age,
+                        "gender": gender,
+                        "work_hours": work_hours,
+                        "meetings_per_day": meetings_per_day,
+                        "sleep_hours": sleep_hours,
+                        "stress_level": stress_level,
+                        "top_limiter": top_limiter_name,
+                        "recommended_action": recommended_action_text,
+                        "user_goal": user_goal,
+                        "job_role": job_role
+                    }
+
+                    # 2. One single call saves the lead, dedups, and saves the metrics row with the hash!
+                    assessment_id = lead_manager.save_assessment(
+                        email=email,
+                        metrics_data=save_payload
                     )
+
+                    # 3. Update session state to unlock the UI
+                    st.session_state.current_assessment_id = assessment_id
+                    st.session_state.coach_email = email
+                    st.session_state.coach_email_verified = True
+                    st.rerun() # Refresh screen to show the unlocked content
+
+    # -----------------------------------------------------------
+    # STATE 2: THE UNLOCKED DASHBOARD
+    # -----------------------------------------------------------
+    else:
+        st.success("✅ Assessment saved and benchmarked securely.")
+        
+        # --- PART A: BENCHMARK SECTION ---
+        st.markdown("#### 💾 How You Compare")
+        percentile = lead_manager.calculate_score_percentile(score)
+        
+        col_stat1, col_stat2, col_stat3 = st.columns(3)
+        with col_stat1:
+            st.markdown(f"""
+            <div style="text-align: center; background: rgba(128,128,128,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.15);">
+                <div class="metric-lbl">Your Current Score</div>
+                <div class="metric-val" style="color: {stroke_color}; font-size: 2.5rem; font-weight: 800;">{score}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_stat2:
+            st.markdown(f"""
+            <div style="text-align: center; background: rgba(128,128,128,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.15);">
+                <div class="metric-lbl">Corporate Benchmarking Average</div>
+                <div class="metric-val" style="color: #888888; font-size: 2.5rem; font-weight: 800;">{settings.BENCHMARK_AVG_SCORE}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_stat3:
+            st.markdown(f"""
+            <div style="text-align: center; background: rgba(128,128,128,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.15);">
+                <div class="metric-lbl">Your Corporate Percentile</div>
+                <div class="metric-val" style="color: #06b6d4; font-size: 2.5rem; font-weight: 800;">Top {100 - percentile}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        try:
+            total_participants = len(lead_manager.get_leads_snapshot(1000))
+            st.metric(label="Global Athletes Benchmarked", value=f"{total_participants} professionals")
+        except Exception:
+            pass
+
+        st.divider()
+
+        # --- PART B: AI COACH SECTION ---
+        st.markdown("#### 🎙️ Personalized AI Coaching Protocol")
+        
+        if not api_key:
+            st.info("💡 You are viewing the rules-based fallback plan. (AI Coach is temporarily offline).")
+
+        with st.spinner("Analyzing your limiters and formulating executive advice..."):
+            
+            st.session_state.coach_report = coach_engine.get_coaching_report(
+                age=age,
+                weight=weight,
+                height=height,
+                work_hours=work_hours,
+                meetings_per_day=meetings_per_day,
+                commute_hours=commute_hours,
+                sleep_hours=sleep_hours,
+                travel_days=travel_days,
+                training_days=training_days,
+                stress_level=stress_level,
+                gender=gender,
+                api_key=api_key
+            )
+            
+            # Update the row with the newly generated AI text
+            if st.session_state.coach_report and st.session_state.current_assessment_id:
+                lead_manager.update_ai_response(
+                    assessment_id=st.session_state.current_assessment_id,
+                    ai_response_text=st.session_state.coach_report["content"]
+                )
 
         # Render report from session state persistent container
         if st.session_state.coach_report:
@@ -322,7 +380,7 @@ with tab2:
             )
             st.markdown(source_badge, unsafe_allow_html=True)
 
-            # Convert raw Markdown → HTML so headings, bold, and bullets render correctly
+            # Convert raw Markdown → HTML
             report_html = md_lib.markdown(
                 report["content"],
                 extensions=["nl2br", "sane_lists"]
@@ -427,71 +485,3 @@ with tab3:
             </div>
             """, unsafe_allow_html=True)
 
-# ----------------- TAB 4: SAVE & BENCHMARK -----------------
-with tab4:
-    with st.container():
-        st.markdown("### 💾 Secure Your Performance Benchmarking")
-        st.markdown(
-            "Capture your score in our database to compare yourself with the anonymous aggregate corporate metrics. "
-            "We will save your email into marketing and correlate your metrics anonymously via security hashes."
-        )
-        
-        percentile = lead_manager.calculate_score_percentile(score)
-        
-        col_stat1, col_stat2, col_stat3 = st.columns(3)
-        with col_stat1:
-            st.markdown(f"""
-            <div style="text-align: center; background: rgba(128,128,128,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.15);">
-                <div class="metric-lbl">Your Current Score</div>
-                <div class="metric-val" style="color: {stroke_color}; font-size: 2.5rem; font-weight: 800;">{score}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with col_stat2:
-            st.markdown(f"""
-            <div style="text-align: center; background: rgba(128,128,128,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.15);">
-                <div class="metric-lbl">Corporate Benchmarking Average</div>
-                <div class="metric-val" style="color: #888888; font-size: 2.5rem; font-weight: 800;">{settings.BENCHMARK_AVG_SCORE}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with col_stat3:
-            st.markdown(f"""
-            <div style="text-align: center; background: rgba(128,128,128,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(128,128,128,0.15);">
-                <div class="metric-lbl">Your Corporate Percentile</div>
-                <div class="metric-val" style="color: #06b6d4; font-size: 2.5rem; font-weight: 800;">Top {100 - percentile}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        with st.form("lead_form", clear_on_submit=False):
-            email = st.text_input("Enter your Professional Email Address", placeholder="exec@company.com")
-            submit_btn = st.form_submit_button("Lock in my score & benchmark it", type="primary")
-            consent = st.checkbox(
-                "I agree to the Privacy Policy and allow Corporate Athlete Scorer to safely process "
-                "and anonymize my metrics for corporate benchmarking purposes."
-            )
-            if submit_btn:
-                if not consent:
-                    st.error("You must agree to the data processing terms to calculate your benchmark.")
-                elif not email or "@" not in email or "." not in email:
-                    st.error("❌ Please enter a valid email address.")
-                else:
-                    st.success("Compliance verified! Saving PII variables safely...")
-                    
-                    # Store plain text email to marketing sheet safely
-                    lead_manager.save_marketing_lead(email)
-                    
-                    # Update active assessment row matching active hash values securely
-                    email_hash = lead_manager._hash_email(email)
-                    try:
-                        # Find matching index cell and update hash securely
-                        cell = lead_manager.metrics_sheet.find(st.session_state.current_assessment_id, in_column=11)
-                        if cell:
-                            lead_manager.metrics_sheet.update_cell(cell.row, 9, email_hash)
-                        
-                        st.success(f"🎉 Your score of **{score}** has been benchmarked! We've saved your result successfully.")
-                        
-                        total_participants = len(lead_manager.get_leads_snapshot(1000))
-                        st.metric(label="Global Athletes Benchmarked", value=f"{total_participants} professionals")
-                    except Exception as e:
-                        st.error(f"❌ Cloud Write Failure: Failed to link anonymized email parameter: {e}")
