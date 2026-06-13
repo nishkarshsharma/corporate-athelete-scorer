@@ -1,3 +1,4 @@
+import pytest
 from src.score_engine import (
     calculate_bmi,
     calculate_score_details,
@@ -22,6 +23,7 @@ def test_calculate_bmi_negative():
 
 # ----------------- SLEEP SCORE MONOTONICITY & VALUES (5 scenarios) -----------------
 def test_sleep_score_max():
+    # Order: age, weight, height, gender, work_hours, meetings_per_day, commute_hours, sleep_hours, travel_days, training_days, stress_level
     details = calculate_score_details(30, 70, 175, 40, 2, 0, 8.5, 0, 4, 1)
     assert details["sleep_score"] == 25.0
 

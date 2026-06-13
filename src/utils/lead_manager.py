@@ -1,121 +1,169 @@
-import os
-import streamlit as st
-from streamlit_gsheets import GSheetsConnection
-import pandas as pd
-from datetime import datetime
 import hashlib
-from config import settings
+import uuid
+import os
+from datetime import datetime
+from typing import Dict, Any
 
-try:
-    IS_LOCAL = "connections" not in st.secrets
-except st.errors.StreamlitSecretNotFoundError:
-    IS_LOCAL = True  # Safely default to True if no secrets file exists locally
+import gspread
+from google.oauth2.service_account import Credentials
 
-if not IS_LOCAL:
-    from streamlit_gsheets import GSheetsConnection
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+SPREADSHEET_ID = "1nOsGaFAvM2_pP-Sgu017SzfamV37baapvfehHnEZcbw"
+
+# Resolve SA key path relative to this file → project root
+_SA_KEY_PATH = os.path.normpath(
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..",
+        "corporte-athelete-leads-sa-key.json"
+    )
+)
+
+# Only Sheets API is required — Drive API is NOT needed when opening by ID
+_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+app_version = "2.0.0"
+
+
+# ---------------------------------------------------------------------------
+# Connection helper
+# ---------------------------------------------------------------------------
+def _connect():
+    """
+    Authenticate with the Service Account and return
+    (metrics_sheet, marketing_sheet). Returns (None, None) on failure
+    so the rest of the app degrades gracefully.
+    """
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-    except Exception:
-        IS_LOCAL = True  # Fallback gracefully if connection config fails
+        creds = Credentials.from_service_account_file(_SA_KEY_PATH, scopes=_SCOPES)
+        client = gspread.authorize(creds)
+        spreadsheet = client.open_by_key(SPREADSHEET_ID)
+        m_sheet  = spreadsheet.worksheet("leads_metrics")
+        mk_sheet = spreadsheet.worksheet("leads_marketing")
+        print("[lead_manager] Connected to Google Sheets successfully.")
+        return m_sheet, mk_sheet
+    except Exception as exc:
+        print(f"[lead_manager] Google Sheets connection failed: {exc}")
+        return None, None
 
+
+# Module-level singletons — accessed directly by app.py
+metrics_sheet, marketing_sheet = _connect()
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
 def _hash_email(email: str) -> str:
-    """
-    Cleans and hashes an email address using SHA-256 to ensure data anonymity.
-    """
     if not email:
         return ""
-    return hashlib.sha256(email.strip().lower().encode()).hexdigest()
+    return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
 
-def save_lead(lead_data: dict) -> bool:
-    """
-    Splits data into decoupled tracks: anonymized user metrics in tab 1,
-    and raw email details in tab 2 for standalone marketing functions.
-    """
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def save_marketing_lead(email: str) -> None:
+    """Append a plain-text email + timestamp to the leads_marketing sheet."""
+    if not email:
+        return
+    if marketing_sheet is None:
+        print("[lead_manager] marketing_sheet unavailable — skipping save.")
+        return
+    timestamp = datetime.utcnow().isoformat()
     try:
-        timestamp = datetime.now().isoformat()
-        raw_email = lead_data.get("email", "").strip()
-        
-        if not raw_email:
-            print("Error saving lead: Email is required.")
+        marketing_sheet.append_row([email.strip().lower(), timestamp])
+    except Exception as exc:
+        print(f"[lead_manager] Failed to save marketing lead: {exc}")
+
+
+def save_assessment(email: str, metrics_data: Dict[str, Any]) -> str:
+    """
+    Append one row to leads_metrics and (if email is given) save the
+    marketing lead.  Returns the generated assessment_id UUID.
+
+    Column order matches the sheet header exactly:
+    score | category | age | gender | work_hours | meetings_per_day |
+    sleep_hours | stress_level | email_hash | timestamp | assessment_id |
+    ai_generated | top_limiter | recommended_action | app_version |
+    user_goal | job_role
+    """
+    assessment_id = str(uuid.uuid4())
+    email_hash    = _hash_email(email)
+    timestamp     = datetime.utcnow().isoformat()
+
+    if email:
+        save_marketing_lead(email)
+
+    if metrics_sheet is None:
+        print("[lead_manager] metrics_sheet unavailable — assessment not persisted.")
+        return assessment_id
+
+    row_payload = [
+        metrics_data.get("score"),                   # A  score
+        metrics_data.get("category"),                # B  category
+        metrics_data.get("age"),                     # C  age
+        metrics_data.get("gender"),                  # D  gender
+        metrics_data.get("work_hours"),              # E  work_hours
+        metrics_data.get("meetings_per_day"),        # F  meetings_per_day
+        metrics_data.get("sleep_hours"),             # G  sleep_hours
+        metrics_data.get("stress_level"),            # H  stress_level
+        email_hash,                                  # I  email_hash
+        timestamp,                                   # J  timestamp
+        assessment_id,                               # K  assessment_id
+        False,                                       # L  ai_generated
+        metrics_data.get("top_limiter", ""),         # M  top_limiter
+        metrics_data.get("recommended_action", ""),  # N  recommended_action
+        app_version,                                 # O  app_version
+        metrics_data.get("user_goal", ""),           # P  user_goal
+        metrics_data.get("job_role", ""),            # Q  job_role
+    ]
+
+    try:
+        metrics_sheet.append_row(row_payload, value_input_option="USER_ENTERED")
+    except Exception as exc:
+        print(f"[lead_manager] Failed to append assessment row: {exc}")
+
+    return assessment_id
+
+
+def update_ai_response(assessment_id: str, ai_response_text: str) -> bool:
+    """
+    Mark the assessment row as AI-generated (column L = ai_generated).
+    Returns True on success, False otherwise.
+    """
+    if metrics_sheet is None:
+        return False
+    try:
+        cell = metrics_sheet.find(assessment_id, in_column=11)  # K = assessment_id
+        if not cell:
             return False
-
-        # --- PREPARE DATASET 1: ANONYMOUS METRICS ---
-        metrics_payload = lead_data.copy()
-        metrics_payload["email_hash"] = _hash_email(raw_email)
-        metrics_payload["timestamp"] = timestamp
-        # Strip out personal identifier
-        if "email" in metrics_payload:
-            del metrics_payload["email"]
-            
-        df_metrics_new = pd.DataFrame([metrics_payload])
-
-        # --- PREPARE DATASET 2: ISOLATED MARKETING LIST ---
-        marketing_payload = {
-            "email": raw_email,
-            "timestamp": timestamp
-        }
-        df_marketing_new = pd.DataFrame([marketing_payload])
-
-        # --- WORK WITH TAB 1: leads_metrics ---h
-        try:
-            # worksheet parameter targets the specific tab
-            existing_metrics = conn.read(worksheet="leads_metrics", ttl=0)
-        except Exception:
-            existing_metrics = pd.DataFrame()
-
-        if existing_metrics.empty:
-            updated_metrics = df_metrics_new
-        else:
-            updated_metrics = pd.concat([existing_metrics, df_metrics_new], ignore_index=True)
-        
-        conn.update(worksheet="leads_metrics", data=updated_metrics)
-
-        # --- WORK WITH TAB 2: leads_marketing ---
-        try:
-            existing_marketing = conn.read(worksheet="leads_marketing", ttl=0)
-        except Exception:
-            existing_marketing = pd.DataFrame()
-
-        if existing_marketing.empty:
-            updated_marketing = df_marketing_new
-        else:
-            updated_marketing = pd.concat([existing_marketing, df_marketing_new], ignore_index=True)
-            
-        conn.update(worksheet="leads_marketing", data=updated_marketing)
-
+        # Column L (index 12) = ai_generated flag
+        metrics_sheet.update_cell(cell.row, 12, True)
         return True
-        
-    except Exception as e:
-        print(f"Error executing tokenized save routine: {e}")
+    except Exception as exc:
+        print(f"[lead_manager] Failed to update AI response flag: {exc}")
         return False
 
-def get_leads_snapshot(n: int = 5) -> pd.DataFrame:
-    """
-    Returns the latest n entries from the marketing email track.
-    """
-    try:
-        df = conn.read(worksheet="leads_metrics", ttl=0)
-        if df.empty:
-            return pd.DataFrame()
-        return df.tail(n)
-    except Exception as e:
-        print(f"Error fetching leads snapshot: {e}")
-        return pd.DataFrame()
 
 def calculate_score_percentile(score: int) -> int:
-    """
-    Calculates the percentile ranking relative to the corporate benchmark.
-    """
+    from config import settings
     avg = settings.BENCHMARK_AVG_SCORE
-    st_dev = settings.BENCHMARK_STD_DEV
-    
+    if score > avg:
+        return min(99, 50 + int((score - avg) * 1.1))
+    else:
+        return max(1, 50 - int((avg - score) * 1.1))
+
+
+def get_leads_snapshot(n: int) -> list:
+    """Return up to n data rows from leads_metrics (excludes header)."""
+    if metrics_sheet is None:
+        return []
     try:
-        import scipy.stats as st_stats
-        percentile = int(round(st_stats.norm.cdf(score, loc=avg, scale=st_dev) * 100))
-    except ImportError:
-        if score > avg:
-            percentile = min(99, 50 + int((score - avg) * 1.1))
-        else:
-            percentile = max(1, 50 - int((avg - score) * 1.1))
-            
-    return min(99, max(1, percentile))
+        all_rows = metrics_sheet.get_all_values()
+        return all_rows[1 : n + 1]  # skip header row
+    except Exception as exc:
+        print(f"[lead_manager] Failed to fetch leads snapshot: {exc}")
+        return []

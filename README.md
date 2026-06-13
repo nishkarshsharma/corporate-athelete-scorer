@@ -50,20 +50,22 @@ cd corporate-athelete-scorer
 
 ```
 
-### 2. Install Dependencies
+### 2. Install Dependencies & Virtual Environment
 
-Ensure you have Python 3.11+ installed, then run:
+Ensure you have Python 3.11+ and [uv](https://docs.astral.sh/uv/) installed, then run:
 
 ```bash
-pip install -r requirements.txt
-
+uv sync
 ```
+
+This will automatically create a virtual environment (`.venv`) and install all required dependencies.
+
+### 3. Configure Environment Variables
 
 Create a `.env` file in the root directory to automatically load your Gemini API configurations:
 
 ```env
 GEMINI_API_KEY=your_api_key_here
-
 ```
 
 *Note: You can also enter your API key directly into the application sidebar at runtime.*
@@ -73,16 +75,16 @@ GEMINI_API_KEY=your_api_key_here
 Launch the Streamlit server locally:
 
 ```bash
-streamlit run app.py
-
+uv run streamlit run app.py
 ```
 
 ---
 
 ## 🧪 Running Tests
 
-The repository includes comprehensive automated test suites to validate scoring logic, health limiters, and data serialization flows. Run them via `pytest`:
+The repository includes comprehensive automated test suites to validate scoring logic, health limiters, and data serialization flows. Run them via `uv run pytest`:
 
 ```bash
-pytest
+uv run pytest
+```
 ```
