@@ -2,6 +2,7 @@ from altair.utils import deprecation
 from asyncio import coroutines
 import streamlit as st
 import os
+import markdown as md_lib
 from dotenv import load_dotenv
 from textwrap import dedent
 
@@ -320,11 +321,14 @@ with tab2:
                 '<span class="category-badge cat-sedentary" style="margin-bottom: 20px;">🧭 Rule-Based Coach Fallback</span>'
             )
             st.markdown(source_badge, unsafe_allow_html=True)
-            st.markdown(f"""
-                <div class="coach-report">
-                    {report["content"]}
-                </div>
-                """,
+
+            # Convert raw Markdown → HTML so headings, bold, and bullets render correctly
+            report_html = md_lib.markdown(
+                report["content"],
+                extensions=["nl2br", "sane_lists"]
+            )
+            st.markdown(
+                f'<div class="coach-report">{report_html}</div>',
                 unsafe_allow_html=True
             )
 

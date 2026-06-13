@@ -216,8 +216,9 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Streamlit
+# Streamlit secrets (both legacy name and correct name)
 .streamlit/.secret.toml
+.streamlit/secrets.toml
 
 data
 corporte-athelete-leads-sa-key.json
@@ -229,3 +230,4 @@ __pycache__
 TO-DO.txt
 
 .venv/*
+.vscode
