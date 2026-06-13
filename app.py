@@ -21,6 +21,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Prioritize Streamlit secrets (for prod), fallback to os.getenv (for local .env)
+api_key = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN"))
+
 # Load External Styling from stylesheet
 css_path = os.path.join("src", "styles", "main.css")
 try:
@@ -65,14 +68,6 @@ with st.sidebar:
         training_days = st.slider("Weekly Training Days", 0, 7, 2, step=1)
         stress_level = st.slider("Cognitive Stress (1-10)", 1, 10, 7)
 
-    with st.expander("🔑 Hugging Face API Settings", expanded=False):
-        api_key = st.text_input(
-            "Hugging Face API Key", 
-            type="password", 
-            value=os.environ.get(settings.HF_TOKEN_ENV_VAR, ""), 
-            help="Provide your Hugging Face API Key to enable custom, generative coaching advice. Falls back to local Rules Engine otherwise."
-        )
-
 # ----------------- DATA PREPARATION & DETACHED AUTO-SAVE FLOW -----------------
 current_metrics = {
     "age": age,
@@ -112,34 +107,6 @@ if "coach_report" not in st.session_state:
 if "last_processed_metrics" not in st.session_state:
     st.session_state.last_processed_metrics = None
 
-# CRITICAL P0 STEP: Handle state mutations to trigger unique assessment entries
-# If user changes sliders, calculate a brand-new assessment ID immediately.
-if st.session_state.last_processed_metrics != current_metrics:
-    st.session_state.last_processed_metrics = current_metrics
-    st.session_state.coach_report = None  # Reset report state so it updates against new values
-    
-    # Pack unified dictionary containing core metrics alongside the extended payload attributes
-    save_payload = {
-        "score": score,
-        "category": category,
-        "age": age,
-        "gender": gender,
-        "work_hours": work_hours,
-        "meetings_per_day": meetings_per_day,
-        "sleep_hours": sleep_hours,
-        "stress_level": stress_level,
-        "top_limiter": top_limiter_name,
-        "recommended_action": recommended_action_text,
-        "user_goal": user_goal,
-        "job_role": job_role
-    }
-    
-    # Save base structural assessment row immediately to Google Sheets database log
-    # Pass an empty string for the email since PII email capture is handled asynchronously on Tab 4
-    st.session_state.current_assessment_id = lead_manager.save_assessment(
-        email="", 
-        metrics_data=save_payload
-    )
 
 # Render Score Ring CSS classes matching your stylesheet perfectly
 if score >= 81:
@@ -273,7 +240,8 @@ with tab1:
             
             st.markdown(limiters_combined_html, unsafe_allow_html=True)
 
-# ----------------- TAB 2: AI PERFORMANCE COACH -----------------
+# ----------------- TAB 2: AI PERFORMANCE COACH ----------------- 
+#added Email Gate
 with tab2:
     with st.container():
         st.markdown("### 🎙️ Personalized AI Coaching Report")
@@ -282,55 +250,107 @@ with tab2:
             "designed to optimize your physiology around your busy corporate lifestyle."
         )
         
-        has_api_key = bool(api_key or os.environ.get(settings.HF_TOKEN_ENV_VAR))
-        if not has_api_key:
-            st.info("💡 You are viewing the rules-based fallback coaching plan. Enter a Hugging Face API Key in the sidebar for customized, AI-driven guidance.")
+        # 1. Simplified API Status Check
+        if api_key:
+            st.success("🤖 AI Performance Coach is active. Unlock below to analyze.")
         else:
-            st.success("🤖 AI Performance Coach is connected. Click below to analyze.")
+            st.info("💡 You are viewing the rules-based fallback plan. (AI Coach is temporarily offline).")
 
-        if st.button("Generate Coaching Protocol", type="primary"):
-            with st.spinner("Analyzing metrics and formulating executive advice..."):
-                st.session_state.coach_report = coach_engine.get_coaching_report(
-                    age=age,
-                    weight=weight,
-                    height=height,
-                    work_hours=work_hours,
-                    meetings_per_day=meetings_per_day,
-                    commute_hours=commute_hours,
-                    sleep_hours=sleep_hours,
-                    travel_days=travel_days,
-                    training_days=training_days,
-                    stress_level=stress_level,
-                    gender=gender,
-                    api_key=api_key
-                )
-                
-                # UPDATE TRANSACTION: Write the generated report backend string onto the active row tracker
-                if st.session_state.coach_report and st.session_state.current_assessment_id:
-                    lead_manager.update_ai_response(
-                        assessment_id=st.session_state.current_assessment_id,
-                        ai_response_text=st.session_state.coach_report["content"]
+        # 2. Always visible score teaser to drive conversion
+        st.markdown(f"#### Your score is **{score}** · Top limiter: **{top_limiter_name}**")
+
+        # Initialize session state for the coach tab email gate
+        if "coach_email_verified" not in st.session_state:
+            st.session_state.coach_email_verified = False
+
+        # 3. Email Gate Logic
+        if not st.session_state.coach_email_verified:
+            coach_email = st.text_input("Enter your email to unlock your AI protocol:", key="coach_email_input")
+            st.caption("We'll send occasional insights. No spam.")
+            
+            if st.button("Unlock My Coaching Protocol", type="primary"):
+                if coach_email and "@" in coach_email and "." in coach_email:
+                    st.session_state.coach_email = coach_email
+                    st.session_state.coach_email_verified = True
+                    st.rerun() # Refresh to show the generate button
+                else:
+                    st.error("Please enter a valid email address.")
+
+        # 4. Generating the Report (Unlocked state)
+        else:
+            if st.button("Generate Coaching Protocol", type="primary"):
+                with st.spinner("Analyzing metrics and formulating executive advice..."):
+                    
+                    # 1. Pack unified dictionary containing core metrics alongside the extended attributes
+                    save_payload = {
+                        "score": score,
+                        "category": category,
+                        "age": age,
+                        "gender": gender,
+                        "work_hours": work_hours,
+                        "meetings_per_day": meetings_per_day,
+                        "sleep_hours": sleep_hours,
+                        "stress_level": stress_level,
+                        "top_limiter": top_limiter_name,
+                        "recommended_action": recommended_action_text,
+                        "user_goal": user_goal,
+                        "job_role": job_role
+                    }
+
+                    # 2. Explicit Intent Save: Pass the correctly named arguments
+                    assessment_id = lead_manager.save_assessment(
+                        metrics_data=save_payload,
+                        email=st.session_state.coach_email
+                    )
+                    st.session_state.current_assessment_id = assessment_id
+                    
+                    # Deduplication handled internally in save_marketing_lead
+                    lead_manager.save_marketing_lead(
+                        email=st.session_state.coach_email, 
+                        source="ai_coach"
                     )
 
-        # Render report from session state persistent container
-        if st.session_state.coach_report:
-            report = st.session_state.coach_report
-            source_badge = (
-                '<span class="category-badge cat-elite" style="margin-bottom: 20px;">🤖 AI Flash Coach</span>'
-                if report["is_ai"] else 
-                '<span class="category-badge cat-sedentary" style="margin-bottom: 20px;">🧭 Rule-Based Coach Fallback</span>'
-            )
-            st.markdown(source_badge, unsafe_allow_html=True)
+                    st.session_state.coach_report = coach_engine.get_coaching_report(
+                        age=age,
+                        weight=weight,
+                        height=height,
+                        work_hours=work_hours,
+                        meetings_per_day=meetings_per_day,
+                        commute_hours=commute_hours,
+                        sleep_hours=sleep_hours,
+                        travel_days=travel_days,
+                        training_days=training_days,
+                        stress_level=stress_level,
+                        gender=gender,
+                        api_key=api_key
+                    )
+                    
+                    # UPDATE TRANSACTION: Write the generated report backend string onto the active row tracker
+                    if st.session_state.coach_report and st.session_state.current_assessment_id:
+                        lead_manager.update_ai_response(
+                            assessment_id=st.session_state.current_assessment_id,
+                            ai_response_text=st.session_state.coach_report["content"]
+                        )
 
-            # Convert raw Markdown → HTML so headings, bold, and bullets render correctly
-            report_html = md_lib.markdown(
-                report["content"],
-                extensions=["nl2br", "sane_lists"]
-            )
-            st.markdown(
-                f'<div class="coach-report">{report_html}</div>',
-                unsafe_allow_html=True
-            )
+            # Render report from session state persistent container
+            if st.session_state.coach_report:
+                report = st.session_state.coach_report
+                source_badge = (
+                    '<span class="category-badge cat-elite" style="margin-bottom: 20px;">🤖 AI Flash Coach</span>'
+                    if report["is_ai"] else 
+                    '<span class="category-badge cat-sedentary" style="margin-bottom: 20px;">🧭 Rule-Based Coach Fallback</span>'
+                )
+                st.markdown(source_badge, unsafe_allow_html=True)
+
+                # Convert raw Markdown → HTML so headings, bold, and bullets render correctly
+                report_html = md_lib.markdown(
+                    report["content"],
+                    extensions=["nl2br", "sane_lists"]
+                )
+                st.markdown(
+                    f'<div class="coach-report">{report_html}</div>',
+                    unsafe_allow_html=True
+                )
 
 # ----------------- TAB 3: PROMOTION SIMULATOR -----------------
 with tab3:

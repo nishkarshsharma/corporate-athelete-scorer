@@ -65,18 +65,35 @@ def _hash_email(email: str) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def save_marketing_lead(email: str) -> None:
-    """Append a plain-text email + timestamp to the leads_marketing sheet."""
-    if not email:
-        return
+
+#deduplication fix
+
+def save_marketing_lead(email: str, source: str = "benchmark") -> bool:
+    """
+    Saves a marketing lead to the leads_marketing sheet.
+    Includes deduplication to prevent duplicate email entries.
+    """
     if marketing_sheet is None:
-        print("[lead_manager] marketing_sheet unavailable — skipping save.")
-        return
-    timestamp = datetime.utcnow().isoformat()
+        print("[lead_manager] marketing_sheet unavailable — lead not saved.")
+        return False
+
     try:
-        marketing_sheet.append_row([email.strip().lower(), timestamp])
-    except Exception as exc:
-        print(f"[lead_manager] Failed to save marketing lead: {exc}")
+        # Deduplication check: get all emails in column 1
+        existing_emails = marketing_sheet.col_values(1)
+        
+        if email in existing_emails:
+            # Email already exists, skip appending to keep data clean
+            return False 
+            
+        # If not found, append the new row
+        from datetime import datetime
+        timestamp = datetime.utcnow().isoformat()
+        marketing_sheet.append_row([email, source, timestamp])
+        return True
+        
+    except Exception as e:
+        print(f"Error saving marketing lead: {e}")
+        return False
 
 
 def save_assessment(email: str, metrics_data: Dict[str, Any]) -> str:
