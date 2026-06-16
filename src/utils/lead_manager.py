@@ -107,7 +107,7 @@ def save_assessment(email: str, metrics_data: Dict[str, Any]) -> str:
     ai_generated | top_limiter | recommended_action | app_version |
     user_goal | job_role
     """
-    assessment_id = str(uuid.uuid4())
+    assessment_id = str(uuid.uuid4())   
     email_hash    = _hash_email(email)
     timestamp     = datetime.utcnow().isoformat()
 
