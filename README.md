@@ -1,10 +1,3 @@
-I will update the `README.md` to perfectly match your implementation.
-
-I noticed a couple of mathematical notations in your draft like `$\text{Score} \in [0, 100]$`. To keep your markdown pristine, clean, and completely native to GitHub's markdown renderer (which can sometimes choke on inline math expressions in standard prose blocks), I've simplified them into clean, bolded inline text.
-
-Here is your fully updated, professional `README.md` ready to be committed to your repository:
-
-```markdown
 # 💼 Corporate Athlete Scorer
 
 A premium, interactive Streamlit application designed for elite professionals to evaluate their lifestyle, stress, sleep, and activity metrics. By analyzing corporate-induced constraints, the app calculates a personalized **Corporate Athlete Score** (ranging from **0 to 100**) and provides actionable, high-performance recovery strategies.
